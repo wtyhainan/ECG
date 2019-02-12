@@ -58,11 +58,11 @@ def main():
     V_num = 0
     A_num = 0
     for i in labels:
-        if i in ['N' , 'L' , 'R' , 'B']:
+        if i in N_type:
             N_num += labels[i]
-        elif i in ['a' , 'J' , 'A' , 'S' , 'j' , 'e' , 'n']:
+        elif i in A_type:
             A_num += labels[i]
-        elif i in ['V' , 'E']:
+        elif i in V_type:
             V_num += labels[i]
     print(N_num , V_num , A_num)
 
@@ -87,6 +87,7 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 
 
 
