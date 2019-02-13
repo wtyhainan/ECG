@@ -1,0 +1,244 @@
+import numpy as np
+import ecg
+import csv
+import prepro as pp
+import pandas as pd
+import  matplotlib.pyplot as plt
+import os
+
+fs = 250
+
+set1 = ['101' , '106' , '108' , '109' , '112' , '114' , '115' , '116' , '118' , '119' , '122' , '124' , '201' , '203' , '205' , '207' , '208' , '209' , '215' , '220' , '223' , '230']
+set2 = ['100' , '103' , '105' , '111' , '113' , '117' , '121' , '123' , '200' , '202' , '210' , '212' , '213' , '214' , '219' , '221' , '222' , '228' , '231' , '232' , '233' , '234']
+
+# set1 = ['115']
+# set2 = ['202']
+
+
+all_label_type = ['N' , 'L' , 'R' , 'V' , 'A' , '+' , 'F' , '~' , '!' , '"' ,
+              'j' , 'x' , 'a' , '|' , 'E' , 'J' , 'e' , 'Q' , '[' , ']' , 'S']
+
+valid_label_type = ['N' , 'L' , 'R' , 'B' , 'V' , 'E' , 'a' , 'J' ,
+                    'A' , 'S' , 'j' , 'e' , 'n' , 'F' , '|' , 'f' , 'Q']
+#这个分类标准依据论文
+#《Heartbeat classification using abstract features from the abductive interpretation of the ECG》
+N_type = ['N' , 'L' , 'R' , 'B']
+V_type = ['V' , 'E']
+A_type = ['a' , 'J' , 'A' , 'S' , 'j' , 'e' , 'n']
+F_type = ['F']
+Q_type = ['|' , 'f' , 'Q']
+
+
+def filter_bad_label(ECG):
+    sig = ECG['sig']
+    sample = ECG['sample']
+    label = ECG['label']
+
+    real_label = []
+    real_sample = []
+
+    for i in range(0 , len(label)):
+        tmp_label = label[i]
+        if tmp_label in valid_label_type:
+            real_sample.append(sample[i])
+            if tmp_label in N_type:
+                real_label.append(0)    #-->N
+            elif tmp_label in V_type:
+                real_label.append(1)    #-->V
+            elif tmp_label in A_type:
+                real_label.append(2)    #-->A
+            elif tmp_label in F_type:
+                real_label.append(3)    #-->F
+            elif tmp_label in Q_type:
+                real_label.append(4)    #-->Q
+
+    ECG['sample'] = np.array(real_sample)
+    ECG['label'] = np.array(real_label)
+    return ECG
+
+
+def get_train_data(ECG):
+
+    sig = ECG['sig']
+    label = ECG['label']
+    sample = ECG['sample']
+    rand = np.random.randint(-4 , 4 , len(sample))
+    sample += rand
+
+
+    x = []
+    y = []
+    for i in range(2 , len(sample) - 2):
+        pos = sample[i]
+        tmp_sig = sig[int(pos - 0.25 * fs) : int(pos + 0.25 * fs)]
+        tmp_label = label[i]
+        x.append(tmp_sig)
+        y.append(tmp_label)
+
+    return {'x':np.array(x) , 'y':np.array(y)}
+
+
+def write_to_csv(data , path , init = True):
+
+    hfile = open(path , 'w' , newline = '')
+
+    csvwriter = csv.writer(hfile)
+
+    x = data['x']
+    y = data['y']
+    if init:    #if init is True,then append first_row
+
+        first_row = np.arange(0 , data['x'].shape[1] , 1)
+        first_row = np.reshape(first_row , [1 , -1])
+
+        x = np.concatenate((first_row , x) , axis = 0)
+        y = np.concatenate((['label'] , y))
+
+    y = np.reshape(y , [-1 , 1])
+    dat = np.concatenate((x , y) , axis = 1)
+
+    csvwriter.writerows(dat)
+
+    hfile.close()
+
+    print('%s file write finished' % path)
+
+def make_all_data():
+    root = '/home/wty/MyDataDir/MIT-BIH'
+    num = 0
+    for i in [set1 , set2]:
+        for j in i:
+            path = os.path.join(root , j)
+            ECG = ecg.OpenECGFile(path , type = 'wfdb' , batch_size = 650000 , batch_num = 0)
+            ECG = filter_bad_label(ECG)
+            ECG = pp.Denoise(ECG)
+            data = get_train_data(ECG)
+
+            if num == 0:
+                path = '/home/wty/桌面/ECG/Train/' + j + '.csv'
+            else:
+                path = '/home/wty/桌面/ECG/Test/' + j + '.csv'
+
+            write_to_csv(data, path)
+        num += 1
+
+
+def get_NVA_record(root = '/home/wty/桌面/ECG/Train' , valid_N = True , valid_V = True , valid_A = True):
+
+    N_write = csv.writer(open('/home/wty/桌面/train_N.csv', 'a', newline=''))
+    V_write = csv.writer(open('/home/wty/桌面/train_V.csv', 'a', newline=''))
+    A_write = csv.writer(open('/home/wty/桌面/train_A.csv', 'a', newline=''))
+
+    all_path = os.listdir(root)
+
+    for i in all_path:
+        path = os.path.join(root , i)
+        dat = np.array(pd.read_csv(path))
+
+        x = dat[: , 0 : dat.shape[1] - 1]
+        y = dat[: , dat.shape[1] - 1 : ]
+        y = np.reshape(y , [-1])
+
+        pos = np.where(y == 0)[0]
+        if len(pos) != 0:
+            if valid_N == True:
+                N_write.writerows(x[pos])
+
+        pos = np.where(y == 1)[0]
+        if len(pos) != 0:
+            if valid_V == True:
+                V_write.writerows(x[pos])
+
+        pos = np.where(y == 2)[0]
+        if len(pos) != 0:
+            if valid_A == True:
+                A_write.writerows(x[pos])
+
+
+
+# def plot_KPCA(*data):
+#     X,y = data
+#     kernels = ['linear','poly','rbf','sigmoid']
+#     fig = plt.figure()
+#     for i,kernel in enumerate(kernels):
+#         kpca = decomposition.KernelPCA(n_components=2, kernel=kernel)
+#         kpca.fit(X)
+#         X_r = kpca.transform(X)
+#         ax = fig.add_subplot(2, 2, i+1)
+#         for label in np.unique(y):
+#             position = y == label
+#             ax.scatter(X_r[position,0],X_r[position,1],label="target=%d"%label)
+#             ax.set_xlabel('x[0]')
+#             ax.set_ylabel('x[1]')
+#             ax.legend(loc='best')
+#             ax.set_title('kernel=%s'% kernel)
+#             plt.suptitle("KPCA")
+#             plt.show()
+#
+#     X, y = load_data()
+#
+#     plot_KPCA(X, y)
+
+
+def main():
+
+    # for i in range(0 , 30):
+    #     make_all_data()
+    #     if i < 10:
+    #         get_NVA_record(valid_N = False)
+    #     elif i >= 10:
+        # get_NVA_record(valid_N=False , valid_V=False)
+    N_dat = np.array(pd.read_csv('/home/wty/桌面/N.csv'))
+    V_dat = np.array(pd.read_csv('/home/wty/桌面/V.csv'))
+
+    num = 5000
+    pos = np.random.randint(0 , 30000 , num)
+    N_dat = N_dat[pos]
+
+    pos = np.random.randint(0 , 30000 , num)
+    V_dat = V_dat[pos]
+    print(N_dat.shape , V_dat.shape)
+
+    x = np.concatenate((N_dat , V_dat) , axis = 0)
+
+
+    from sklearn.decomposition import KernelPCA
+    kpca = KernelPCA(n_components=3 , kernel='rbf' , gamma=5)
+    kpca.fit(x)
+
+    X_r = kpca.transform(x)
+
+    c = np.array(['y'] * num)
+    cc = np.array(['r'] * num)
+    cValue = np.concatenate((c , cc))
+
+
+    # fig, ax = plt.subplots()
+    #
+    # ax.scatter(x = X_r[: , 0:1] , y = X_r[: , 1:2] , c = cValue)
+    #
+    # plt.show()
+    from mpl_toolkits.mplot3d import  Axes3D
+
+
+    fig = plt.figure()
+    ax = Axes3D(fig)
+    ax.scatter(xs = X_r[: , 0:1] , ys = X_r[: , 1:2] , zs = X_r[: , 2:3] ,c = cValue)
+    plt.show()
+
+
+
+
+if __name__ == '__main__':
+    main()
+
+
+
+
+
+
+
+
+
+
+
